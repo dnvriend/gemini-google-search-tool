@@ -16,12 +16,14 @@ import click
 from gemini_google_search_tool.core.search import SearchResponse
 
 
-def print_verbose(message: str, verbose: bool = False) -> None:
+def print_verbose(message: str, verbose: bool | int = False) -> None:
     """Print verbose message to stderr.
+
+    This function is deprecated. Use logging module instead.
 
     Args:
         message: The message to print
-        verbose: Whether to print the message
+        verbose: Whether to print the message (bool or int count)
     """
     if verbose:
         click.echo(f"[INFO] {message}", err=True)

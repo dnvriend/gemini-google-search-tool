@@ -7,11 +7,14 @@ Note: This code was generated with assistance from AI coding tools
 and has been reviewed and tested by a human.
 """
 
+import logging
 from dataclasses import dataclass
 
 from google.genai import types
 
 from gemini_google_search_tool.core.client import GeminiClient
+
+logger = logging.getLogger(__name__)
 
 
 class SearchError(Exception):
@@ -87,17 +90,24 @@ def query_with_grounding(
     Raises:
         SearchError: If the query fails or returns invalid response
     """
+    logger.debug(f"Starting query with grounding: model={model}")
+    logger.debug(f"Prompt length: {len(prompt)} characters")
+
     try:
         # Build Google Search tool
+        logger.debug("Building Google Search grounding tool")
         grounding_tool = types.Tool(google_search=types.GoogleSearch())
         config = types.GenerateContentConfig(tools=[grounding_tool])
 
         # Generate content
+        logger.debug(f"Calling Gemini API: model={model}")
         response = client.client.models.generate_content(
             model=model,
             contents=prompt,
             config=config,
         )
+
+        logger.debug("API call completed successfully")
 
         # Extract response text
         response_text = ""
@@ -110,7 +120,10 @@ def query_with_grounding(
                     if hasattr(part, "text") and part.text is not None
                 )
 
+        logger.debug(f"Extracted response text: {len(response_text)} characters")
+
         # Extract grounding metadata
+        logger.debug("Extracting grounding metadata")
         citations: list[Citation] = []
         web_search_queries: list[str] | None = None
         grounding_segments: list[GroundingSegment] | None = None
@@ -139,10 +152,13 @@ def query_with_grounding(
                     if uri:
                         citations.append(Citation(index=i + 1, uri=uri, title=title or ""))
 
+                logger.debug(f"Extracted {len(citations)} citations")
+
                 # Extract web search queries
                 queries = getattr(grounding_metadata, "web_search_queries", [])
                 if queries:
                     web_search_queries = queries
+                    logger.debug(f"Web search queries: {queries}")
 
                 # Extract grounding supports
                 supports = getattr(grounding_metadata, "grounding_supports", [])
@@ -163,7 +179,9 @@ def query_with_grounding(
                             )
                     if segments:
                         grounding_segments = segments
+                        logger.debug(f"Extracted {len(segments)} grounding segments")
 
+        logger.info("Query with grounding completed successfully")
         return SearchResponse(
             response_text=response_text,
             citations=citations,
@@ -172,6 +190,9 @@ def query_with_grounding(
         )
 
     except Exception as e:
+        logger.error(f"Query with grounding failed: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.debug("Full traceback:", exc_info=True)
         raise SearchError(f"Query failed: {str(e)}") from e
 
 
@@ -193,8 +214,13 @@ def add_inline_citations(
     Returns:
         Response text with inline citations added
     """
+    logger.debug("Adding inline citations to response text")
+
     if not grounding_segments or not citations:
+        logger.debug("No grounding segments or citations available, returning unchanged text")
         return response_text
+
+    logger.debug(f"Processing {len(grounding_segments)} grounding segments")
 
     # Create citation URI lookup
     citation_uris = {c.index: c.uri for c in citations}
@@ -220,4 +246,5 @@ def add_inline_citations(
             citation_string = ", ".join(citation_links)
             text = text[: segment.end_index] + citation_string + text[segment.end_index :]
 
+    logger.debug("Inline citations added successfully")
     return text

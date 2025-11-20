@@ -16,12 +16,14 @@ from gemini_google_search_tool.core.search import (
     add_inline_citations,
     query_with_grounding,
 )
+from gemini_google_search_tool.logging_config import get_logger, setup_logging
 from gemini_google_search_tool.utils import (
     output_json,
     output_text,
-    print_verbose,
     validate_prompt,
 )
+
+logger = get_logger(__name__)
 
 
 @click.command()
@@ -55,8 +57,8 @@ from gemini_google_search_tool.utils import (
 @click.option(
     "--verbose",
     "-v",
-    is_flag=True,
-    help="Enable verbose output (includes grounding metadata)",
+    count=True,
+    help="Enable verbose output (use -v for INFO, -vv for DEBUG, -vvv for TRACE)",
 )
 def query(
     prompt: str | None,
@@ -64,7 +66,7 @@ def query(
     add_citations: bool,
     pro: bool,
     text: bool,
-    verbose: bool,
+    verbose: int,
 ) -> None:
     """Query Gemini with Google Search grounding for real-time web information.
 
@@ -89,9 +91,16 @@ def query(
             --pro --text
 
     \b
-        # Verbose output with full grounding metadata
-        gemini-google-search-tool query "Climate change news" \\
-            --verbose
+        # Verbose mode (INFO level)
+        gemini-google-search-tool query "Climate change news" -v
+
+    \b
+        # Debug mode (DEBUG level)
+        gemini-google-search-tool query "Climate change news" -vv
+
+    \b
+        # Trace mode (DEBUG + library internals)
+        gemini-google-search-tool query "Climate change news" -vvv
 
     \b
     Output Format (JSON):
@@ -99,7 +108,7 @@ def query(
         {
           "response_text": "...",
           "citations": [{"index": 1, "uri": "...", "title": "..."}],
-          "grounding_metadata": {...}  // Only with --verbose
+          "grounding_metadata": {...}  // Only with -vv or -vvv
         }
 
     \b
@@ -112,68 +121,81 @@ def query(
         1. [Title](https://...)
         2. [Another Title](https://...)
     """
+    # Setup logging at start of command
+    setup_logging(verbose)
+    logger.info("Starting query command")
+
     try:
         # Validate and retrieve prompt
         final_prompt = validate_prompt(prompt, stdin)
+        logger.debug(f"Validated prompt: {final_prompt[:50]}...")
 
         # Initialize client
+        logger.debug("Initializing Gemini client")
         client = GeminiClient()
 
         # Select model
         model = "gemini-2.5-pro" if pro else "gemini-2.5-flash"
-        print_verbose(
-            f"Querying with model '{model}' and Google Search grounding",
-            verbose,
-        )
+        logger.info(f"Querying with model '{model}' and Google Search grounding")
 
         # Execute query
+        logger.debug("Executing query with grounding")
         response = query_with_grounding(
             client=client,
             prompt=final_prompt,
             model=model,
         )
 
-        print_verbose("Query completed successfully", verbose)
+        logger.info("Query completed successfully")
+        logger.debug(f"Response length: {len(response.response_text)} characters")
+        logger.debug(f"Citations found: {len(response.citations)}")
 
         # Handle text output
         if text:
+            logger.debug("Formatting output as markdown text")
             # Add inline citations if requested
             if add_citations and response.grounding_segments:
+                logger.debug("Adding inline citations to response text")
                 response.response_text = add_inline_citations(
                     response.response_text,
                     response.grounding_segments,
                     response.citations,
                 )
-                print_verbose("Citations added to response text", verbose)
+                logger.info("Citations added to response text")
 
             output_text(response)
             return
 
         # Handle JSON output (default)
+        logger.debug("Formatting output as JSON")
         output: dict[str, object] = {}
 
         # Add inline citations if requested
         if add_citations and response.grounding_segments:
+            logger.debug("Adding inline citations to response text")
             response.response_text = add_inline_citations(
                 response.response_text,
                 response.grounding_segments,
                 response.citations,
             )
-            print_verbose("Citations added to response text", verbose)
+            logger.info("Citations added to response text")
 
         output["response_text"] = response.response_text
 
         # Add citations if available
         if response.citations:
+            logger.debug(f"Adding {len(response.citations)} citations to output")
             output["citations"] = [
                 {"index": c.index, "uri": c.uri, "title": c.title} for c in response.citations
             ]
 
-        # Add verbose metadata if requested
-        if verbose:
+        # Add debug metadata if requested (-vv or -vvv)
+        if verbose >= 2:
+            logger.debug("Adding grounding metadata to output")
             grounding_dict: dict[str, object] = {}
 
             if response.web_search_queries:
+                logger.debug(f"Web search queries: {response.web_search_queries}")
                 grounding_dict["web_search_queries"] = response.web_search_queries
 
             if response.citations:
@@ -182,6 +204,7 @@ def query(
                 ]
 
             if response.grounding_segments:
+                logger.debug(f"Grounding segments: {len(response.grounding_segments)}")
                 grounding_dict["grounding_supports"] = [
                     {
                         "segment": {
@@ -200,8 +223,13 @@ def query(
         output_json(output)
 
     except (GeminiClientError, SearchError, ValueError) as e:
+        logger.error(f"Query failed: {str(e)}")
+        logger.debug("Full traceback:", exc_info=True)
         click.echo(f"Error: {str(e)}", err=True)
         sys.exit(1)
     except Exception as e:
+        logger.error(f"Unexpected error: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.debug("Full traceback:", exc_info=True)
         click.echo(f"Error: Unexpected error: {str(e)}", err=True)
         sys.exit(1)

@@ -111,6 +111,31 @@ uv sync
 uv tool install .
 ```
 
+### Shell Completion
+
+Enable tab completion for your shell to improve the CLI experience:
+
+**Bash (add to `~/.bashrc`):**
+```bash
+eval "$(gemini-google-search-tool completion bash)"
+```
+
+**Zsh (add to `~/.zshrc`):**
+```bash
+eval "$(gemini-google-search-tool completion zsh)"
+```
+
+**Fish (run once):**
+```bash
+mkdir -p ~/.config/fish/completions
+gemini-google-search-tool completion fish > ~/.config/fish/completions/gemini-google-search-tool.fish
+```
+
+For more details:
+```bash
+gemini-google-search-tool completion --help
+```
+
 ## Configuration
 
 ### API Key Setup
